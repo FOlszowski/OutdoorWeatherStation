@@ -1,2 +1,2 @@
-# OutdoorWeatherStationn
+# OutdoorWeatherStation
 Project for Embedded Systems
