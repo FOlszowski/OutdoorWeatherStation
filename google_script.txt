@@ -1,0 +1,23 @@
+var SS = SpreadsheetApp.openById('');      
+
+function doPost(e) {
+  var parsedData;
+  try { 
+    parsedData = JSON.parse(e.postData.contents);
+  } 
+  catch(f){
+    return ContentService.createTextOutput("Error in parsing request body: " + f.message);
+  }    
+  switch (parsedData.command) {
+    case "appendRow":
+      var current_sheet = SS.getSheetByName(parsedData.sheet_name);
+      var dataArr = parsedData.values.split(",");
+      var date_now = Utilities.formatDate(new Date(), "GMT+2", "yyyy-MM-dd");
+      var time_now = Utilities.formatDate(new Date(), "GMT+2", "HH:mm:ss");
+      var appendData = [date_now, time_now, dataArr[0], dataArr[1], dataArr[2], dataArr[3], dataArr[4], dataArr[5]];
+      current_sheet.appendRow(appendData);
+      SpreadsheetApp.flush();
+      break;     
+    }
+  return ContentService.createTextOutput("End");
+}

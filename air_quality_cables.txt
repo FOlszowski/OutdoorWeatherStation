@@ -1,0 +1,8 @@
+Pin 1 -> VCC   [RED]
+Pin 2 -> GND   [BLACK]
+Pin 3 -> SET   [BLUE]
+Pin 4 -> RDX   [GREEN]
+Pin 5 -> TXD   [YELLOW]
+Pin 6 -> RESET [ORANGE]
+
+Pin 7/8 -> Not connected
