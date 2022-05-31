@@ -16,12 +16,12 @@ uint8_t FiveVPowerSwitch = D6;
 struct GoogleData {
   float temperature;
   float humidity;
-  float pressure;
-  float airQuality_PM_AE_UG_1_0;
-  float airQuality_PM_AE_UG_2_5;
-  float airQuality_PM_AE_UG_10_0;
+  uint32_t pressure;
+  uint32_t airQuality_PM_AE_UG_1_0;
+  uint32_t airQuality_PM_AE_UG_2_5;
+  uint32_t airQuality_PM_AE_UG_10_0;
 };
-GoogleData collectedData = {-1,-1,-1,-1,-1,-1};
+GoogleData collectedData = {404,404,404,404,404,404};
 
 
 // Sensors globals
@@ -50,20 +50,6 @@ String google_payload_prefix = "{\"command\": \"appendRow\", \
 String google_payload_suffix = "\"}";
 String google_payload = "";
 
-
-// PMS Functions
-struct PMS_DATA {
-    // Standard Particles, CF=1
-    uint16_t PM_SP_UG_1_0;
-    uint16_t PM_SP_UG_2_5;
-    uint16_t PM_SP_UG_10_0;
-
-    // Atmospheric environment
-    uint16_t PM_AE_UG_1_0;
-    uint16_t PM_AE_UG_2_5;
-    uint16_t PM_AE_UG_10_0;
-};
-
 void PMS_SetPassiveMode()
 {
   uint8_t command[] = { 0x42, 0x4D, 0xE1, 0x00, 0x00, 0x01, 0x70 };
@@ -74,7 +60,7 @@ void PMS_RequestRead(uint8_t buffer[])
 {
   uint8_t command[] = { 0x42, 0x4D, 0xE2, 0x00, 0x00, 0x01, 0x71 };
   Serial.write(command, sizeof(command));
-  for(int i = 0; i < 1000; ++i){
+  for(int i = 0; i < 2000; ++i){
     if(Serial.available()){
       Serial.readBytes(buffer, 24);
       return;
@@ -104,19 +90,12 @@ bool PMS_CheckCorrectBuffer(uint8_t buffer[])
   return true;
 }
 
-void ReadPMS(uint16_t timeout = 5000){
+void ReadPMS(uint16_t timeout = 10000){
   uint8_t buffer[24];
   uint32_t start = millis();
-  do
-  {
+  do{
     PMS_RequestRead(buffer);
     if(PMS_CheckCorrectBuffer(buffer)){
-      // Standard Particles, CF=1.
-      // PM_SP_UG_1_0 = makeWord(buffer[0], buffer[1]);
-      // PM_SP_UG_2_5 = makeWord(buffer[2], buffer[3]);
-      // PM_SP_UG_10_0 = makeWord(buffer[4], buffer[5]);
-
-      // Atmospheric Environment.
       collectedData.airQuality_PM_AE_UG_1_0  = makeWord(buffer[6], buffer[7]);
       collectedData.airQuality_PM_AE_UG_2_5  = makeWord(buffer[8], buffer[9]);
       collectedData.airQuality_PM_AE_UG_10_0 = makeWord(buffer[10], buffer[11]);
@@ -127,14 +106,16 @@ void ReadPMS(uint16_t timeout = 5000){
 // ESP Functions
 void ConnectWiFi(){
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+  for (int i = 0; i < 20; ++i){
+    if (WiFi.status() != WL_CONNECTED){
+      delay(500);
+    }
+    else{
+      break;
+    }
   }
 }
- 
-void DisconnectWiFi(){
-  WiFi.disconnect();
-}
+
 
 bool ConnectToGoogleHost(){
   client = new HTTPSRedirect(httpsPort);
@@ -224,26 +205,22 @@ void PrepareSensors(){
   PMS_SetPassiveMode();
 }
 
+
 void setup() {
   pinMode(ThreeVPowerSwitch, OUTPUT);
   pinMode(FiveVPowerSwitch, OUTPUT);
   TurnOff3VPowerSwitch();
   TurnOff5VPowerSwitch();
-}
 
-
-
-void loop() {
-
-    ConnectWiFi();
-    if (ConnectToGoogleHost()){
+  ConnectWiFi();
+  if (WiFi.status() == WL_CONNECTED){
+      if (ConnectToGoogleHost()){
       CollectData();
       String payload = CreatePayload();
       client->POST(google_write_url, host, payload, false);
     }
-    DisconnectWiFi();
-    delete client;
-
-    delay(10000);
-  
+  }
+  ESP.deepSleep(36e8); 
 }
+
+void loop() {}
