@@ -27,8 +27,6 @@ GoogleData collectedData = {-1,-1,-1,-1,-1,-1};
 // Sensors globals
 typedef DFRobot_BMP280_IIC BMP; 
 BMP bmp(&Wire, BMP::eSdoLow);
-PMS pms(Serial);
-PMS::DATA data;
 const int httpsPort = 443;
 HTTPSRedirect* client = nullptr;
 
@@ -53,20 +51,89 @@ String google_payload_suffix = "\"}";
 String google_payload = "";
 
 
-// Functions
+// PMS Functions
+struct PMS_DATA {
+    // Standard Particles, CF=1
+    uint16_t PM_SP_UG_1_0;
+    uint16_t PM_SP_UG_2_5;
+    uint16_t PM_SP_UG_10_0;
+
+    // Atmospheric environment
+    uint16_t PM_AE_UG_1_0;
+    uint16_t PM_AE_UG_2_5;
+    uint16_t PM_AE_UG_10_0;
+};
+
+void PMS_SetPassiveMode()
+{
+  uint8_t command[] = { 0x42, 0x4D, 0xE1, 0x00, 0x00, 0x01, 0x70 };
+  Serial.write(command, sizeof(command));
+}
+
+void PMS_RequestRead(uint8_t buffer[])
+{
+  uint8_t command[] = { 0x42, 0x4D, 0xE2, 0x00, 0x00, 0x01, 0x71 };
+  Serial.write(command, sizeof(command));
+  for(int i = 0; i < 1000; ++i){
+    if(Serial.available()){
+      Serial.readBytes(buffer, 24);
+      return;
+    }
+    else{
+      delay(1);
+    }
+  }  
+  return;
+}
+
+bool PMS_CheckCorrectBuffer(uint8_t buffer[])
+{
+  if(buffer[0] != 0x42 || buffer[1] != 0x4D){
+    return false;
+  }
+
+  uint16_t calculated_checksum = 0;
+  for (int i = 0; i < 22; ++i)
+  {
+      calculated_checksum += buffer[i];
+  }
+  uint16_t checksum = makeWord(buffer[22], buffer[23]);
+  if (calculated_checksum != checksum){
+    return false;
+  }
+  return true;
+}
+
+void ReadPMS(uint16_t timeout = 5000){
+  uint8_t buffer[24];
+  uint32_t start = millis();
+  do
+  {
+    PMS_RequestRead(buffer);
+    if(PMS_CheckCorrectBuffer(buffer)){
+      // Standard Particles, CF=1.
+      // PM_SP_UG_1_0 = makeWord(buffer[0], buffer[1]);
+      // PM_SP_UG_2_5 = makeWord(buffer[2], buffer[3]);
+      // PM_SP_UG_10_0 = makeWord(buffer[4], buffer[5]);
+
+      // Atmospheric Environment.
+      collectedData.airQuality_PM_AE_UG_1_0  = makeWord(buffer[6], buffer[7]);
+      collectedData.airQuality_PM_AE_UG_2_5  = makeWord(buffer[8], buffer[9]);
+      collectedData.airQuality_PM_AE_UG_10_0 = makeWord(buffer[10], buffer[11]);
+    } 
+  } while (millis() - start < timeout);
+}
+
+// ESP Functions
 void ConnectWiFi(){
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
   }
-  Serial.println("WiFi connected");
 }
  
 void DisconnectWiFi(){
   WiFi.disconnect();
-  Serial.println("WiFi disconnected");
 }
 
 bool ConnectToGoogleHost(){
@@ -75,9 +142,6 @@ bool ConnectToGoogleHost(){
   client->setPrintResponseBody(true);
   client->setContentTypeHeader("application/json");
   
-  Serial.print("Connecting to ");
-  Serial.println(host);
-
   // Try to connect for a maximum of 5 times
   for (int i=0; i<5; i++){
     int retval = client->connect(host, httpsPort);
@@ -85,17 +149,14 @@ bool ConnectToGoogleHost(){
        return true;
     }
     else
-      Serial.println("Connection failed. Retrying...");
       delay(500);
   }
-
-  Serial.print("Could not connect to server: ");
-  Serial.println(host);
-  Serial.println("Exiting...");
   return false;
 }
 
 void CollectData(){
+  TurnOn5VPowerSwitch();
+  TurnOn3VPowerSwitch();
   PrepareSensors();
 
   // Getting temperature and humidity from sensor
@@ -110,18 +171,11 @@ void CollectData(){
   collectedData.pressure = bmp_press;
   TurnOff3VPowerSwitch();
 
- //Delay for PMS sensor (try to lower value to save energy)
-  delay(30000);
-
   // Function to get air quality
-  pms.requestRead();
-  if (pms.readUntil(data, 10000))
-  {
-    collectedData.airQuality_PM_AE_UG_1_0  = data.PM_AE_UG_1_0;
-    collectedData.airQuality_PM_AE_UG_2_5  = data.PM_AE_UG_2_5;
-    collectedData.airQuality_PM_AE_UG_10_0 = data.PM_AE_UG_10_0;
-  }
-  pms.sleep();
+  //Delay for PMS sensor (30s from datasheet)
+  delay(30000);
+  ReadPMS();
+  Serial.end();
   TurnOff5VPowerSwitch();
 }
 
@@ -152,19 +206,13 @@ void TurnOff3VPowerSwitch(){
 }
 
 
-void PrepareSensors(){
-  TurnOn5VPowerSwitch();
-  TurnOn3VPowerSwitch();
+void PrepareSensors(){ 
   Serial.begin(9600);
-  pms.passiveMode();
-  pms.wakeUp();
-  Serial.println("PMS sensor prepared"); 
-
   Wire.begin();
+  delay(100);
   if(!sht3x_softReset(SHT3_ADDRESS)){
      delay(100);
   }
-  Serial.println("Sht3x chip prepared");   //Wrzucić w for 
 
   bmp.reset();
   for (int i = 0; i < 5; ++i){
@@ -173,38 +221,14 @@ void PrepareSensors(){
     }
     delay(100);
   }
-  Serial.println("Bmp chip prepared");   // Dołożyć komunikat o błędzie
+  PMS_SetPassiveMode();
 }
-
-
-void PrintCollectedData(){
-    Serial.println("======================================");
-    Serial.println("Collected data:");
-    Serial.print("temperature[C]: ");
-    Serial.println(collectedData.temperature);
-    Serial.print("humidity[%]: ");
-    Serial.println(collectedData.humidity);
-    Serial.print("pressure[hPa]: ");
-    Serial.println(collectedData.pressure);
-    Serial.println("air quality[ug/m3]: ");
-    Serial.print("PM 1.0: ");
-    Serial.println(collectedData.airQuality_PM_AE_UG_1_0);
-    Serial.print("PM 2.5: ");
-    Serial.println(collectedData.airQuality_PM_AE_UG_2_5);
-    Serial.print("PM 10.0: ");
-    Serial.println(collectedData.airQuality_PM_AE_UG_10_0);
-    Serial.println("======================================");
-    Serial.flush();
-}
-
-
 
 void setup() {
   pinMode(ThreeVPowerSwitch, OUTPUT);
   pinMode(FiveVPowerSwitch, OUTPUT);
   TurnOff3VPowerSwitch();
   TurnOff5VPowerSwitch();
-  Serial.begin(9600);
 }
 
 
@@ -212,20 +236,14 @@ void setup() {
 void loop() {
 
     ConnectWiFi();
-    bool google_connected = ConnectToGoogleHost();
-    if (google_connected){
+    if (ConnectToGoogleHost()){
       CollectData();
-      // PrintCollectedData();
       String payload = CreatePayload();
       client->POST(google_write_url, host, payload, false);
     }
     DisconnectWiFi();
     delete client;
 
-    // CollectData();
-    // PrintCollectedData();
-
-    delay(60000);
-    
-
+    delay(10000);
+  
 }
