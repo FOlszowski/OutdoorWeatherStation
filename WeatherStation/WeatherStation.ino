@@ -30,25 +30,14 @@ BMP bmp(&Wire, BMP::eSdoLow);
 const int httpsPort = 443;
 HTTPSRedirect* client = nullptr;
 
-
 // External configuration
 extern const char* ssid;
 extern const char* password;
 extern const char* host;
 extern const char *GScriptId;
 
-
-// Google Spreadsheet Strings
-// Write to Google Spreadsheet
+// Google writing string
 String google_write_url = String("/macros/s/") + GScriptId + "/exec?cal";
-// Read from Google Spreadsheet 
-String google_read_url = String("/macros/s/") + GScriptId + "/exec?read";
-
-String google_payload_prefix = "{\"command\": \"appendRow\", \
-                          \"sheet_name\": \"Datalogger\", \
-                          \"values\": \"";
-String google_payload_suffix = "\"}";
-String google_payload = "";
 
 void PMS_SetPassiveMode()
 {
@@ -161,6 +150,12 @@ void CollectData(){
 }
 
 String CreatePayload(){
+  String google_payload_prefix = "{\"command\": \"appendRow\", \
+                            \"sheet_name\": \"Datalogger\", \
+                            \"values\": \"";
+  String google_payload_suffix = "\"}";
+  String google_payload = "";
+
   String payload = (google_payload_prefix + collectedData.temperature + "," + collectedData.humidity + \
                     "," + collectedData.pressure + "," + collectedData.airQuality_PM_AE_UG_1_0 + "," + \
                     collectedData.airQuality_PM_AE_UG_2_5 + "," + collectedData.airQuality_PM_AE_UG_10_0 + google_payload_suffix);
